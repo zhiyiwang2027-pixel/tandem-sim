@@ -131,6 +131,91 @@ def solve_rate_kkt(
     return q, info
 
 
+def solve_capped_edge_rate_kkt(
+    w: Sequence[float],
+    g_lin: Sequence[float],
+    lambda_cap: Sequence[float],
+    *,
+    edge_cap: float,
+    feasibility_tol: float = 1e-9,
+) -> Tuple[np.ndarray, Dict[str, object]]:
+    r"""Solve an edge-only capped rate program.
+
+        min_q sum_i [w_i/(2q_i) + g_i q_i]
+
+    subject to ``0 < q_i <= lambda_cap_i`` and ``sum_i q_i <= edge_cap``.
+
+    KKT gives ``q_i(nu)=min(lambda_i, sqrt(w_i/(2(g_i+nu))))``.
+    The nonnegative edge multiplier ``nu`` is found by monotone bisection
+    when the edge constraint binds.
+    """
+    w = np.asarray(w, dtype=float)
+    g = np.asarray(g_lin, dtype=float)
+    lam_cap = np.asarray(lambda_cap, dtype=float)
+    if w.ndim != 1 or g.shape != w.shape or lam_cap.shape != w.shape:
+        raise ValueError("w, g_lin, and lambda_cap must be one-dimensional and equally sized.")
+    if np.any(~np.isfinite(w)) or np.any(w <= 0.0):
+        raise ValueError("All weights must be finite and strictly positive.")
+    if np.any(~np.isfinite(g)) or np.any(g < 0.0):
+        raise ValueError("All linear slopes must be finite and nonnegative.")
+    if np.any(~np.isfinite(lam_cap)) or np.any(lam_cap <= 0.0):
+        raise ValueError("All lambda caps must be finite and strictly positive.")
+    if edge_cap <= 0.0:
+        raise ValueError("edge_cap must be positive.")
+
+    def q_of(nu: float) -> np.ndarray:
+        penalty = g + nu
+        with np.errstate(divide="ignore", invalid="ignore"):
+            q_unconstrained = np.sqrt(w / (2.0 * penalty))
+        return np.minimum(lam_cap, q_unconstrained)
+
+    q0 = q_of(0.0)
+    if np.all(np.isfinite(q0)) and float(q0.sum()) <= edge_cap:
+        nu = 0.0
+        q = q0
+    else:
+        nu = _bisect_decreasing(lambda x: float(q_of(x).sum()), edge_cap)
+        q = q_of(nu)
+
+    edge_use = float(q.sum())
+    cap_slack = lam_cap - q
+    cap_active = cap_slack <= 1e-10 * np.maximum(1.0, lam_cap)
+    cap_dual_like = np.where(
+        cap_active,
+        np.maximum(w / (2.0 * lam_cap * lam_cap) - g - nu, 0.0),
+        0.0,
+    )
+
+    if np.any(~np.isfinite(q)) or np.any(q <= 0.0):
+        raise RuntimeError("Capped rate solver returned a nonpositive or nonfinite rate.")
+    if np.any(q > lam_cap + feasibility_tol):
+        raise RuntimeError("Capped rate solver violated a lambda cap.")
+    if edge_use > edge_cap + feasibility_tol:
+        raise RuntimeError(f"Edge constraint violation: {edge_use-edge_cap:.3e}")
+
+    interior = ~cap_active
+    if np.any(interior):
+        stationarity = -w[interior] / (2.0 * q[interior] * q[interior]) + g[interior] + nu
+        scale = max(1.0, float(np.max(g[interior] + nu)))
+        if float(np.max(np.abs(stationarity))) > 1e-7 * scale:
+            raise RuntimeError("Capped KKT stationarity residual is too large.")
+
+    info: Dict[str, object] = {
+        "nu_edge": float(nu),
+        "edge_usage": edge_use,
+        "edge_cap": float(edge_cap),
+        "edge_slack": float(edge_cap - edge_use),
+        "lambda_cap": lam_cap.copy(),
+        "cap_slack": cap_slack,
+        "cap_active": cap_active,
+        "cap_active_count": int(cap_active.sum()),
+        "cap_active_frac": float(cap_active.mean()),
+        "cap_dual_like": cap_dual_like,
+        "cap_dual_like_sum": float(cap_dual_like.sum()),
+    }
+    return q, info
+
+
 def joint_params_v3(N, L, p, mu, w):
     p = np.asarray(p, float)
     w = np.asarray(w, float)
@@ -175,6 +260,31 @@ def iso2_params_v3(N, L, p, mu, w):
         kind="iso2_relaxed", qd=qd, b=b, A=A, w=w.copy(), L=int(L),
         mu=float(mu), dual=dual,
         vE=w / mu, vQ=(1.0 - mu) / mu * w,
+        vY=(A / qd - 1.0 + (1.0 - mu)**2 / mu) * w,
+        vh=(A / qd + (3.0 - 4.0 * mu + mu**2) / mu) * w,
+    )
+
+
+def iso2_lambda_params_v3(N, L, p, mu, w, lambda_cap):
+    """Pilot-estimated lambda-aware isolated Stage-2 tuning."""
+    w = np.asarray(w, float)
+    lambda_cap = np.asarray(lambda_cap, float)
+    g = w * (1.0 - mu) / mu**2
+    qd, dual = solve_capped_edge_rate_kkt(w, g, lambda_cap, edge_cap=mu)
+    b = float(qd.sum())
+    A = mu + (1.0 - mu) * b / mu
+    return dict(
+        kind="iso2_lambda",
+        lambda_cap=lambda_cap.copy(),
+        qd=qd,
+        b=b,
+        A=A,
+        w=w.copy(),
+        L=int(L),
+        mu=float(mu),
+        dual=dual,
+        vE=w / mu,
+        vQ=(1.0 - mu) / mu * w,
         vY=(A / qd - 1.0 + (1.0 - mu)**2 / mu) * w,
         vh=(A / qd + (3.0 - 4.0 * mu + mu**2) / mu) * w,
     )
