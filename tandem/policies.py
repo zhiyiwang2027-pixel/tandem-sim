@@ -6,6 +6,7 @@ import numpy as np
 
 from .rate_optimizer import (
     iso1_params_v3,
+    iso2_lambda_params_v3,
     iso2_params_v3,
     joint_params_v3,
     lb_bsside_v3,
@@ -150,6 +151,14 @@ def build_policies_v3(N, L, p, mu, w, *, allow_uncertified_L1=False):
         "Greedy": ComposedV3(GreedyBSV3(w), GreedyESV3(w), "Greedy"),
     }
     return pol, dict(joint=jp, iso1=i1, iso2=i2)
+
+
+def build_iso1_iso2_lambda_policy_v3(N, L, p, mu, w, lambda_cap):
+    """Build the pilot-estimated lambda-aware isolated MW baseline."""
+    i1 = iso1_params_v3(N, L, p, w)
+    i2_lambda = iso2_lambda_params_v3(N, L, p, mu, w, lambda_cap)
+    return ComposedV3(IsoBSV3(i1), IsoESV3(i2_lambda), "iso1 + iso2-lambda")
+
 
 def build_experiment_v3(N, L, p, mu, w, *, allow_uncertified_L1=False):
     """Build policies, Lyapunov parameters, and all lower-bound scalars."""

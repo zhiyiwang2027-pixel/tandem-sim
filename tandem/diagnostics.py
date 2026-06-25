@@ -100,3 +100,59 @@ def paired_replications(
             float(diff.mean() + 1.96 * se),
         ) if n > 1 else (np.nan, np.nan),
     }
+
+
+def estimate_iso1_voq_arrival_rates(
+    N,
+    L,
+    p,
+    mu,
+    w,
+    *,
+    pilot_seeds=(100, 101, 102, 103, 104),
+    K_pilot=50_000,
+    warmup_pilot=5_000,
+) -> Dict[str, object]:
+    """Estimate VOQ arrival rates induced by isolated Stage-1 MW.
+
+    The Stage-2 controller is only used to keep the simulated tandem state valid.
+    With the separated RNG streams and current slot convention, the isolated
+    Stage-1 arrival process is the object being estimated here.
+    """
+    from .policies import ComposedV3, IsoBSV3, UniformESV3
+    from .rate_optimizer import iso1_params_v3
+    from .simulator import TandemAoISimulatorV3
+
+    pilot_seeds = tuple(int(seed) for seed in pilot_seeds)
+    if not pilot_seeds:
+        raise ValueError("pilot_seeds must contain at least one seed.")
+
+    iso1 = iso1_params_v3(N, L, p, w)
+    policy = ComposedV3(IsoBSV3(iso1), UniformESV3(), "iso1 pilot + uniform Stage-2")
+    rows = []
+    for seed in pilot_seeds:
+        result = TandemAoISimulatorV3(N, L, p, mu, w, seed=seed).run(
+            policy,
+            K=int(K_pilot),
+            warmup=int(warmup_pilot),
+        )
+        rows.append(np.asarray(result["VOQ_arrival_rate"], float))
+
+    values = np.asarray(rows, float)
+    lambda_hat = values.mean(axis=0)
+    se = values.std(axis=0, ddof=1) / np.sqrt(values.shape[0]) if values.shape[0] > 1 else np.full(N, np.nan)
+    return {
+        "lambda_hat": lambda_hat,
+        "standard_error": se,
+        "sum_lambda": float(lambda_hat.sum()),
+        "min_lambda": float(lambda_hat.min()),
+        "max_lambda": float(lambda_hat.max()),
+        "per_seed": values,
+        "metadata": {
+            "pilot_seeds": pilot_seeds,
+            "K_pilot": int(K_pilot),
+            "warmup_pilot": int(warmup_pilot),
+            "stage1_controller": "IsoBSV3",
+            "stage2_controller": "UniformESV3",
+        },
+    }

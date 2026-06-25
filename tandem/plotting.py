@@ -12,6 +12,15 @@ SWEEP_STYLE = {
     "SRP1 + iso2": ("s--", "#0f9b9b"),
     "Greedy": (">--", "#3fa83f"),
 }
+QUICK_CONFIG_ORDER = ["aligned", "neutral", "conflict"]
+QUICK_POLICY_ORDER = ["Joint FGMW", "iso1 + iso2", "iso1 + iso2-lambda", "Greedy", "Uniform"]
+QUICK_POLICY_COLORS = {
+    "Joint FGMW": "#d6231f",
+    "iso1 + iso2": "#1f4eb4",
+    "iso1 + iso2-lambda": "#6f4dbf",
+    "Greedy": "#3fa83f",
+    "Uniform": "#888888",
+}
 
 
 def plot_anchor_objectives(anchor_table, anchor_params, order_bar, colors=None):
@@ -130,5 +139,119 @@ def plot_heterogeneous_binding_regimes(HV, ci_fun):
         a1.set_ylabel("difference")
         a1.set_xlabel("edge rate mu")
         a1.grid(alpha=.3)
+    plt.tight_layout()
+    return fig, axes
+
+
+def _quick_orders(df):
+    configs = [c for c in QUICK_CONFIG_ORDER if c in set(df["config"])]
+    policies = [p for p in QUICK_POLICY_ORDER if p in set(df["policy"])]
+    return configs, policies
+
+
+def _quick_metric(df, metric, configs, policies):
+    return (
+        df.pivot(index="config", columns="policy", values=metric)
+        .reindex(index=configs, columns=policies)
+    )
+
+
+def plot_quick_heterogeneous_aoi(df):
+    configs, policies = _quick_orders(df)
+    values = _quick_metric(df, "weighted_dest_aoi", configs, policies)
+    errors = _quick_metric(df, "weighted_dest_aoi_se", configs, policies)
+    x = np.arange(len(configs))
+    width = 0.8 / max(1, len(policies))
+    fig, ax = plt.subplots(figsize=(10, 4.8))
+    for j, policy in enumerate(policies):
+        offset = (j - (len(policies) - 1) / 2.0) * width
+        ax.bar(
+            x + offset,
+            values[policy].to_numpy(),
+            width,
+            yerr=errors[policy].to_numpy(),
+            capsize=3,
+            color=QUICK_POLICY_COLORS.get(policy),
+            label=policy,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(configs)
+    ax.set_ylabel("mean weighted destination AoI")
+    ax.set_title("Quick random heterogeneous comparison")
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(fontsize=8)
+    plt.tight_layout()
+    return fig, ax
+
+
+def _plot_quick_heterogeneous_gap(df, metric, ylabel, title):
+    configs, policies = _quick_orders(df)
+    values = _quick_metric(df, metric, configs, policies)
+    x = np.arange(len(configs))
+    width = 0.8 / max(1, len(policies))
+    fig, ax = plt.subplots(figsize=(10, 4.4))
+    for j, policy in enumerate(policies):
+        offset = (j - (len(policies) - 1) / 2.0) * width
+        ax.bar(
+            x + offset,
+            values[policy].to_numpy(),
+            width,
+            color=QUICK_POLICY_COLORS.get(policy),
+            label=policy,
+        )
+    ax.axhline(0.0, color="k", lw=1.0)
+    ax.set_xticks(x)
+    ax.set_xticklabels(configs)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(fontsize=8)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_quick_heterogeneous_gap_vs_iso(df):
+    return _plot_quick_heterogeneous_gap(
+        df,
+        "gap_vs_iso_pct",
+        "gap vs iso1+iso2 (%)",
+        "Policy gap relative to relaxed isolated MW",
+    )
+
+
+def plot_quick_heterogeneous_gap_vs_iso_lambda(df):
+    return _plot_quick_heterogeneous_gap(
+        df,
+        "gap_vs_iso_lambda_pct",
+        "gap vs iso1+iso2-lambda (%)",
+        "Policy gap relative to lambda-aware isolated MW",
+    )
+
+
+def plot_quick_heterogeneous_gap(df):
+    return plot_quick_heterogeneous_gap_vs_iso(df)
+
+
+def plot_quick_heterogeneous_pipeline(df):
+    configs, policies = _quick_orders(df)
+    metrics = [
+        ("total_VOQ_arrival_rate", "VOQ arrivals"),
+        ("total_delivery_rate", "deliveries"),
+        ("stage2_idle_empty_frac", "S2 idle-empty"),
+        ("total_overwrite_rate", "overwrites"),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+    for ax, (metric, title) in zip(axes.ravel(), metrics):
+        values = _quick_metric(df, metric, configs, policies)
+        values.plot(
+            kind="bar",
+            ax=ax,
+            color=[QUICK_POLICY_COLORS.get(policy) for policy in policies],
+        )
+        ax.set_title(title)
+        ax.set_xlabel("")
+        ax.set_ylabel("post-warmup rate/fraction")
+        ax.grid(axis="y", alpha=0.3)
+        ax.legend(fontsize=7)
     plt.tight_layout()
     return fig, axes
