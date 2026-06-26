@@ -255,3 +255,108 @@ def plot_quick_heterogeneous_pipeline(df):
         ax.legend(fontsize=7)
     plt.tight_layout()
     return fig, axes
+
+
+def _screening_alignment_order(df):
+    return [a for a in QUICK_CONFIG_ORDER if a in set(df["alignment"])]
+
+
+def _screening_regime_order(df):
+    preferred = ["edge-only", "both", "link-only", "slack"]
+    return [r for r in preferred if r in set(df["kkt_regime"])]
+
+
+def plot_screening_joint_gap_by_regime(df):
+    data = df[df["policy"] == "Joint FGMW"].copy()
+    regimes = _screening_regime_order(data)
+    grouped = data.groupby("kkt_regime")["gap_vs_iso_lambda_pct"]
+    means = grouped.mean().reindex(regimes)
+    counts = grouped.count().reindex(regimes)
+    errors = (grouped.std().reindex(regimes) / np.sqrt(counts)).fillna(0.0)
+
+    fig, ax = plt.subplots(figsize=(8, 4.4))
+    ax.bar(regimes, means.to_numpy(), yerr=errors.to_numpy(), capsize=3, color="#d6231f")
+    ax.axhline(0.0, color="k", lw=1.0)
+    ax.set_ylabel("Joint gap vs iso1+iso2-lambda (%)")
+    ax.set_title("Joint FGMW gap by KKT regime")
+    ax.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_screening_greedy_gap_by_alignment(df):
+    data = df[df["policy"] == "Greedy"].copy()
+    alignments = _screening_alignment_order(data)
+    ratios = sorted(data["weight_ratio"].unique())
+    pivot = (
+        data.pivot_table(
+            index="alignment",
+            columns="weight_ratio",
+            values="gap_vs_iso_lambda_pct",
+            aggfunc="mean",
+        )
+        .reindex(index=alignments, columns=ratios)
+    )
+
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    pivot.plot(kind="bar", ax=ax)
+    ax.axhline(0.0, color="k", lw=1.0)
+    ax.set_xlabel("")
+    ax.set_ylabel("Greedy gap vs iso1+iso2-lambda (%)")
+    ax.set_title("Greedy gap by alignment and weight spread")
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(title="weight ratio", fontsize=8)
+    plt.tight_layout()
+    return fig, ax
+
+
+def _plot_screening_heatmap(df, policy, title):
+    data = df[df["policy"] == policy].copy()
+    alignments = _screening_alignment_order(data)
+    mus = sorted(data["mu"].unique())
+    pivot = (
+        data.pivot_table(
+            index="alignment",
+            columns="mu",
+            values="gap_vs_iso_lambda_pct",
+            aggfunc="mean",
+        )
+        .reindex(index=alignments, columns=mus)
+    )
+    values = pivot.to_numpy(float)
+    finite = values[np.isfinite(values)]
+    vmax = max(1.0, float(np.max(np.abs(finite)))) if finite.size else 1.0
+
+    fig, ax = plt.subplots(figsize=(9, 4.2))
+    im = ax.imshow(values, aspect="auto", cmap="coolwarm", vmin=-vmax, vmax=vmax)
+    ax.set_xticks(np.arange(len(mus)))
+    ax.set_xticklabels([f"{mu:g}" for mu in mus])
+    ax.set_yticks(np.arange(len(alignments)))
+    ax.set_yticklabels(alignments)
+    ax.set_xlabel("mu")
+    ax.set_title(title)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("gap vs iso1+iso2-lambda (%)")
+    for i in range(len(alignments)):
+        for j in range(len(mus)):
+            value = values[i, j]
+            if np.isfinite(value):
+                ax.text(j, i, f"{value:.1f}", ha="center", va="center", fontsize=8)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_screening_joint_heatmap(df):
+    return _plot_screening_heatmap(
+        df,
+        "Joint FGMW",
+        "Joint FGMW gap by alignment and edge rate",
+    )
+
+
+def plot_screening_greedy_heatmap(df):
+    return _plot_screening_heatmap(
+        df,
+        "Greedy",
+        "Greedy gap by alignment and edge rate",
+    )
