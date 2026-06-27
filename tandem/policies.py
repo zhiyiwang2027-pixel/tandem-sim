@@ -6,12 +6,15 @@ import numpy as np
 
 from .rate_optimizer import (
     iso1_params_v3,
+    iso1_srp_params_v3,
     iso2_lambda_params_v3,
     iso2_params_v3,
     joint_params_v3,
     lb_bsside_v3,
     lb_dest_iso2_relaxed_v3,
     lb_dest_joint_v3,
+    rate_to_srp_alpha,
+    rate_to_srp_beta,
 )
 
 # =====================================================================
@@ -98,6 +101,53 @@ class WorkConservingSRPESV3:
         return int(sim.rng_policy_es.choice(occ, p=prob))
 
 
+class AlphaSRPBSV3:
+    """Stationary randomized Stage-1 policy with explicit idle probability."""
+    def __init__(self, alpha):
+        alpha = np.asarray(alpha, float)
+        if alpha.ndim != 1 or np.any(~np.isfinite(alpha)) or np.any(alpha < -1e-10):
+            raise ValueError("alpha must be a finite nonnegative vector.")
+        alpha = np.maximum(alpha, 0.0)
+        alpha_sum = float(alpha.sum())
+        if alpha_sum > 1.0 + 1e-8:
+            raise ValueError("alpha probabilities cannot sum above one.")
+        if alpha_sum > 1.0:
+            alpha = alpha / alpha_sum
+            alpha_sum = 1.0
+        self.alpha = alpha
+        self.prob = np.append(alpha, max(0.0, 1.0 - alpha_sum))
+        self.prob = self.prob / self.prob.sum()
+
+    def bs(self, sim):
+        choice = int(sim.rng_policy_bs.choice(sim.N + 1, p=self.prob))
+        return -1 if choice == sim.N else choice
+
+
+class WorkConservingBetaSRPESV3:
+    """Work-conserving tandem SRP Stage-2 rule using beta as priority weights."""
+    def __init__(self, beta):
+        beta = np.asarray(beta, float)
+        if beta.ndim != 1 or np.any(~np.isfinite(beta)) or np.any(beta < -1e-10):
+            raise ValueError("beta must be a finite nonnegative vector.")
+        beta = np.maximum(beta, 0.0)
+        beta_sum = float(beta.sum())
+        if beta_sum > 1.0 + 1e-8:
+            raise ValueError("beta probabilities cannot sum above one.")
+        if beta_sum > 1.0:
+            beta = beta / beta_sum
+        self.beta = beta
+
+    def es(self, sim):
+        occ = np.flatnonzero(sim.V)
+        if occ.size == 0:
+            return -1
+        weights = self.beta[occ]
+        total = float(weights.sum())
+        if total <= 0.0:
+            return int(sim.rng_policy_es.choice(occ))
+        return int(sim.rng_policy_es.choice(occ, p=weights / total))
+
+
 class UniformBSV3:
     def bs(self, sim): return int(sim.rng_policy_bs.integers(sim.N))
 
@@ -158,6 +208,30 @@ def build_iso1_iso2_lambda_policy_v3(N, L, p, mu, w, lambda_cap):
     i1 = iso1_params_v3(N, L, p, w)
     i2_lambda = iso2_lambda_params_v3(N, L, p, mu, w, lambda_cap)
     return ComposedV3(IsoBSV3(i1), IsoESV3(i2_lambda), "iso1 + iso2-lambda")
+
+
+def build_srp_iso_policy_v3(N, L, p, mu, w, lambda_cap):
+    """Build the SRP-iso simulation baseline."""
+    i1_srp = iso1_srp_params_v3(N, L, p, w)
+    i2_lambda = iso2_lambda_params_v3(N, L, p, mu, w, lambda_cap)
+    beta = rate_to_srp_beta(i2_lambda["qd"], mu)
+    return ComposedV3(
+        AlphaSRPBSV3(i1_srp["alpha_srp_iso1"]),
+        WorkConservingBetaSRPESV3(beta),
+        "SRP-iso",
+    )
+
+
+def build_srp_tandem_lb_policy_v3(N, L, p, mu, w, joint_params=None):
+    """Build the SRP baseline induced by the tandem lower-bound target rates."""
+    jp = joint_params_v3(N, L, p, mu, w) if joint_params is None else joint_params
+    alpha = rate_to_srp_alpha(jp["qd"], p, L)
+    beta = rate_to_srp_beta(jp["qd"], mu)
+    return ComposedV3(
+        AlphaSRPBSV3(alpha),
+        WorkConservingBetaSRPESV3(beta),
+        "SRP-tandem-LB",
+    )
 
 
 def build_experiment_v3(N, L, p, mu, w, *, allow_uncertified_L1=False):
