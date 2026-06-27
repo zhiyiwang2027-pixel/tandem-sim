@@ -216,6 +216,142 @@ def solve_capped_edge_rate_kkt(
     return q, info
 
 
+def _clip_tiny_negative(values: Sequence[float], *, name: str, tol: float) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    if np.any(~np.isfinite(arr)):
+        raise ValueError(f"{name} must be finite.")
+    if np.any(arr < -tol):
+        raise ValueError(f"{name} contains entries below the numerical tolerance.")
+    return np.maximum(arr, 0.0)
+
+
+def rate_to_srp_alpha(
+    q: Sequence[float],
+    p: Sequence[float],
+    L: int,
+    *,
+    tol: float = 1e-8,
+) -> np.ndarray:
+    r"""Map feasible Stage-1 VOQ arrival rates to stationary SRP probabilities.
+
+    The mapping is
+
+        alpha_i = q_i / [p_i * (1 - (L-1) sum_j q_j)].
+
+    It is valid when ``sum_i ((L-1)+1/p_i) q_i <= 1``.
+    """
+    q = _clip_tiny_negative(q, name="q", tol=tol)
+    p = np.asarray(p, dtype=float)
+    if q.ndim != 1 or p.shape != q.shape:
+        raise ValueError("q and p must be one-dimensional and equally sized.")
+    if np.any(~np.isfinite(p)) or np.any((p <= 0.0) | (p > 1.0)):
+        raise ValueError("Each p_i must lie in (0,1].")
+    if int(L) < 1:
+        raise ValueError("L must be at least 1.")
+
+    c = (int(L) - 1.0) + 1.0 / p
+    link_usage = float(c @ q)
+    if link_usage > 1.0 + tol:
+        raise ValueError(f"SRP alpha mapping requires link-feasible q; usage={link_usage:.12g}.")
+
+    denom = 1.0 - (int(L) - 1.0) * float(q.sum())
+    if denom <= 0.0:
+        raise ValueError("SRP alpha denominator is nonpositive.")
+
+    alpha = _clip_tiny_negative(q / (p * denom), name="alpha", tol=tol)
+    alpha_sum = float(alpha.sum())
+    if alpha_sum > 1.0 + tol:
+        raise ValueError(f"SRP alpha probabilities sum to {alpha_sum:.12g}.")
+    if alpha_sum > 1.0:
+        alpha = alpha / alpha_sum
+    return alpha
+
+
+def rate_to_srp_beta(
+    q: Sequence[float],
+    mu: float,
+    *,
+    tol: float = 1e-8,
+) -> np.ndarray:
+    r"""Map feasible Stage-2 target delivery rates to SRP beta weights."""
+    q = _clip_tiny_negative(q, name="q", tol=tol)
+    mu = float(mu)
+    if q.ndim != 1:
+        raise ValueError("q must be one-dimensional.")
+    if not np.isfinite(mu) or mu <= 0.0:
+        raise ValueError("mu must be positive.")
+    if float(q.sum()) > mu + tol:
+        raise ValueError("Stage-2 target rates exceed the edge capacity.")
+
+    beta = _clip_tiny_negative(q / mu, name="beta", tol=tol)
+    beta_sum = float(beta.sum())
+    if beta_sum > 1.0 + tol:
+        raise ValueError(f"SRP beta probabilities sum to {beta_sum:.12g}.")
+    if beta_sum > 1.0:
+        beta = beta / beta_sum
+    return beta
+
+
+def solve_iso1_srp_rate_kkt(
+    L: int,
+    p: Sequence[float],
+    w: Sequence[float],
+    *,
+    feasibility_tol: float = 1e-9,
+) -> Tuple[np.ndarray, Dict[str, object]]:
+    r"""Solve the exact isolated Stage-1 SRP rate program.
+
+    With ``a_i = L-1+1/p_i`` and
+    ``kappa = L(L-1)/2 * sum_i w_i``, KKT gives
+
+        q_i(nu) = sqrt(w_i / (kappa + nu a_i)).
+    """
+    p = np.asarray(p, dtype=float)
+    w = np.asarray(w, dtype=float)
+    L = int(L)
+    if p.ndim != 1 or w.shape != p.shape:
+        raise ValueError("p and w must be one-dimensional and equally sized.")
+    if np.any(~np.isfinite(p)) or np.any((p <= 0.0) | (p > 1.0)):
+        raise ValueError("Each p_i must lie in (0,1].")
+    if np.any(~np.isfinite(w)) or np.any(w <= 0.0):
+        raise ValueError("All weights must be finite and strictly positive.")
+    if L < 1:
+        raise ValueError("L must be at least 1.")
+
+    c = (L - 1.0) + 1.0 / p
+    kappa = 0.5 * L * (L - 1.0) * float(w.sum())
+
+    def q_of(nu: float) -> np.ndarray:
+        penalty = kappa + float(nu) * c
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.sqrt(w / penalty)
+
+    q0 = q_of(0.0)
+    if np.all(np.isfinite(q0)) and float(c @ q0) <= 1.0:
+        nu = 0.0
+        q = q0
+    else:
+        nu = _bisect_decreasing(lambda x: float(c @ q_of(x)), 1.0)
+        q = q_of(nu)
+
+    link_usage = float(c @ q)
+    if np.any(~np.isfinite(q)) or np.any(q <= 0.0):
+        raise RuntimeError("Isolated Stage-1 SRP solver returned a nonpositive or nonfinite rate.")
+    if link_usage > 1.0 + feasibility_tol:
+        raise RuntimeError(f"Isolated Stage-1 SRP link violation: {link_usage-1.0:.3e}")
+
+    alpha = rate_to_srp_alpha(q, p, L)
+    info: Dict[str, object] = {
+        "nu_iso1_srp": float(nu),
+        "link_usage": link_usage,
+        "link_slack": float(1.0 - link_usage),
+        "link_binds": bool(abs(1.0 - link_usage) <= 1e-8),
+        "alpha_sum": float(alpha.sum()),
+        "kappa": float(kappa),
+    }
+    return q, info
+
+
 def joint_params_v3(N, L, p, mu, w):
     p = np.asarray(p, float)
     w = np.asarray(w, float)
@@ -246,6 +382,32 @@ def iso1_params_v3(N, L, p, w):
         L=int(L), vR=L * w,
         vP=(1.0 + (L - 1.0) * b) * w / qd,
         vA=(1.0 + (L - 1.0) * b) * w / qd,
+    )
+
+
+def iso1_srp_params_v3(N, L, p, w):
+    """Exact isolated Stage-1 stationary randomized policy tuning."""
+    p = np.asarray(p, float)
+    w = np.asarray(w, float)
+    if p.shape != (int(N),) or w.shape != (int(N),):
+        raise ValueError("p and w must have shape (N,).")
+    c = (int(L) - 1.0) + 1.0 / p
+    q, info = solve_iso1_srp_rate_kkt(L, p, w)
+    alpha = rate_to_srp_alpha(q, p, L)
+    return dict(
+        kind="iso1_srp",
+        qd=q,
+        q_srp_iso1=q,
+        alpha_srp_iso1=alpha,
+        alpha=alpha,
+        b=float(q.sum()),
+        p=p.copy(),
+        w=w.copy(),
+        c=c,
+        L=int(L),
+        dual=info,
+        nu_iso1_srp=float(info["nu_iso1_srp"]),
+        link_binds=bool(info["link_binds"]),
     )
 
 
