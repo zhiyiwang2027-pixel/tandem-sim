@@ -8,9 +8,11 @@ DEFAULT_POLICY_COLORS = ["#d6231f", "#1f4eb4", "#0f9b9b", "#c64bd1", "#7b3fa0", 
 SWEEP_STYLE = {
     "Joint FGMW": ("^-", "#d6231f"),
     "iso1 + iso2": ("o--", "#1f4eb4"),
+    "iso1 + iso2-lambda": ("D--", "#6f4dbf"),
     "iso1 + theorem-SRP2": ("x--", "#c64bd1"),
     "SRP1 + iso2": ("s--", "#0f9b9b"),
     "Greedy": (">--", "#3fa83f"),
+    "Uniform": ("v--", "#888888"),
 }
 QUICK_CONFIG_ORDER = ["aligned", "neutral", "conflict"]
 QUICK_POLICY_ORDER = ["Joint FGMW", "iso1 + iso2", "iso1 + iso2-lambda", "Greedy", "Uniform"]
@@ -91,6 +93,8 @@ def plot_sweep_grid(sweep_v3, style=None):
         s = sweep_v3[nm]
         x = s["x"]
         for k, (st, cl) in style.items():
+            if k not in s["policies"]:
+                continue
             ax.plot(x, s["policies"][k], st, color=cl, lw=1.8, ms=8, label=k, mfc=("none" if "--" in st else cl))
         ax.plot(x, s["lb"], "-", color="k", lw=2.2, label="joint LB")
         ax.set_xlabel(s["xlabel"])
