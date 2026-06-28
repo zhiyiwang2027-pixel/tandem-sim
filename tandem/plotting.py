@@ -18,8 +18,15 @@ QUICK_POLICY_COLORS = {
     "Joint FGMW": "#d6231f",
     "iso1 + iso2": "#1f4eb4",
     "iso1 + iso2-lambda": "#6f4dbf",
+    "SRP-iso": "#0f9b9b",
+    "SRP-tandem-LB": "#c64bd1",
     "Greedy": "#3fa83f",
     "Uniform": "#888888",
+}
+SRP_POLICY_ORDER = ["SRP-iso", "SRP-tandem-LB"]
+SRP_POLICY_COLORS = {
+    "SRP-iso": "#0f9b9b",
+    "SRP-tandem-LB": "#c64bd1",
 }
 
 
@@ -264,6 +271,161 @@ def _screening_alignment_order(df):
 def _screening_regime_order(df):
     preferred = ["edge-only", "both", "link-only", "slack"]
     return [r for r in preferred if r in set(df["kkt_regime"])]
+
+
+def _ordered_present(values, preferred):
+    present = [value for value in preferred if value in set(values)]
+    extras = sorted(value for value in set(values) if value not in set(preferred))
+    return present + extras
+
+
+def _srp_data(df):
+    if "policy" not in df:
+        raise ValueError("Expected a policy column.")
+    return df[df["policy"].isin(SRP_POLICY_ORDER)].copy()
+
+
+def _with_column(data, column, default):
+    if column not in data:
+        data[column] = default
+    return data
+
+
+def _plot_empty(ax, message):
+    ax.text(0.5, 0.5, message, transform=ax.transAxes, ha="center", va="center")
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def _srp_grouped_bar(df, group_col, metric, ylabel, title, preferred_groups):
+    data = _srp_data(df)
+    data = _with_column(data, group_col, "all")
+    data = _with_column(data, metric, np.nan)
+    data[group_col] = data[group_col].fillna("all")
+
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    if data.empty:
+        _plot_empty(ax, "No SRP rows available")
+        ax.set_title(title)
+        plt.tight_layout()
+        return fig, ax
+
+    groups = _ordered_present(data[group_col], preferred_groups)
+    policies = [policy for policy in SRP_POLICY_ORDER if policy in set(data["policy"])]
+    values = (
+        data.pivot_table(index=group_col, columns="policy", values=metric, aggfunc="mean")
+        .reindex(index=groups, columns=policies)
+    )
+    x = np.arange(len(groups))
+    width = 0.75 / max(1, len(policies))
+    for j, policy in enumerate(policies):
+        offset = (j - (len(policies) - 1) / 2.0) * width
+        ax.bar(
+            x + offset,
+            values[policy].to_numpy(),
+            width,
+            color=SRP_POLICY_COLORS.get(policy),
+            label=policy,
+        )
+    ax.axhline(0.0, color="k", lw=1.0)
+    ax.set_xticks(x)
+    ax.set_xticklabels(groups)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(fontsize=8)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_srp_iso_vs_tandem_gap_by_alignment(df):
+    return _srp_grouped_bar(
+        df,
+        "alignment",
+        "gap_vs_iso_lambda_pct",
+        "gap vs iso1+iso2-lambda (%)",
+        "SRP gap vs iso1+iso2-lambda by alignment",
+        QUICK_CONFIG_ORDER,
+    )
+
+
+def plot_srp_iso_vs_tandem_gap_by_regime(df):
+    preferred = ["edge-only", "both", "link-only", "slack", "all"]
+    return _srp_grouped_bar(
+        df,
+        "kkt_regime",
+        "gap_vs_iso_lambda_pct",
+        "gap vs iso1+iso2-lambda (%)",
+        "SRP gap vs iso1+iso2-lambda by KKT regime",
+        preferred,
+    )
+
+
+def plot_srp_tandem_minus_iso_gap(df):
+    data = _srp_data(df)
+    data = _with_column(data, "alignment", "all")
+    data = _with_column(data, "gap_vs_iso_lambda_pct", np.nan)
+    data["alignment"] = data["alignment"].fillna("all")
+
+    fig, ax = plt.subplots(figsize=(8, 4.4))
+    if data.empty:
+        _plot_empty(ax, "No SRP rows available")
+        ax.set_title("SRP-tandem-LB minus SRP-iso gap")
+        plt.tight_layout()
+        return fig, ax
+
+    alignments = _ordered_present(data["alignment"], QUICK_CONFIG_ORDER + ["all"])
+    values = (
+        data.pivot_table(
+            index="alignment",
+            columns="policy",
+            values="gap_vs_iso_lambda_pct",
+            aggfunc="mean",
+        )
+        .reindex(index=alignments, columns=SRP_POLICY_ORDER)
+    )
+    diff = values["SRP-tandem-LB"] - values["SRP-iso"]
+    ax.bar(alignments, diff.to_numpy(), color="#7b3fa0")
+    ax.axhline(0.0, color="k", lw=1.0)
+    ax.set_ylabel("mean gap difference (percentage points)")
+    ax.set_title("SRP-tandem-LB minus SRP-iso gap by alignment")
+    ax.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_srp_pipeline_diagnostics(df):
+    data = _srp_data(df)
+    metrics = [
+        ("total_VOQ_arrival_rate", "VOQ arrivals"),
+        ("total_delivery_rate", "deliveries"),
+        ("total_overwrite_rate", "overwrites"),
+        ("stage2_idle_empty_frac", "S2 idle-empty"),
+    ]
+    for metric, _ in metrics:
+        data = _with_column(data, metric, np.nan)
+
+    policies = [policy for policy in SRP_POLICY_ORDER if policy in set(data["policy"])]
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7))
+    if data.empty or not policies:
+        for ax in axes.ravel():
+            _plot_empty(ax, "No SRP rows available")
+        plt.tight_layout()
+        return fig, axes
+
+    for ax, (metric, title) in zip(axes.ravel(), metrics):
+        values = data.groupby("policy")[metric].mean().reindex(policies)
+        ax.bar(
+            policies,
+            values.to_numpy(),
+            color=[SRP_POLICY_COLORS.get(policy) for policy in policies],
+        )
+        ax.set_title(title)
+        ax.set_ylabel("post-warmup rate/fraction")
+        ax.grid(axis="y", alpha=0.3)
+        ax.tick_params(axis="x", labelrotation=20)
+    plt.tight_layout()
+    return fig, axes
 
 
 def plot_screening_joint_gap_by_regime(df):
