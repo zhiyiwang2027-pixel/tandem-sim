@@ -164,12 +164,14 @@ class TandemAoISimulatorV3:
 
         # Stage 1
         arrival_idx = -1
+        stage1_commit_idx = -1
         nB, nrBS = B, rBS
         if B == -1:
             if uBS != -1:
                 self._event("attempts", uBS)
                 if self._gate_uniform(uBS) < self.p[uBS]:
                     self._event("successes", uBS)
+                    stage1_commit_idx = uBS
                     if L == 1:
                         arrival_idx = uBS
                         nB, nrBS = -1, 0
@@ -229,6 +231,8 @@ class TandemAoISimulatorV3:
             h[delivered] = h_reset
 
         self.B, self.rBS, self.J, self.ZS = nB, nrBS, nJ, nZS
+        if hasattr(policy, "observe_slot"):
+            policy.observe_slot(self, stage1_commit_idx=stage1_commit_idx, delivered_idx=delivered)
         self.k += 1
 
     def run(
@@ -244,6 +248,8 @@ class TandemAoISimulatorV3:
         if not (0 <= warmup < K):
             raise ValueError("Require 0 <= warmup < K.")
         self.reset(horizon=K)
+        if hasattr(policy, "reset"):
+            policy.reset()
         if record_series:
             self._series = {"h": [], "Aq": [], "Q": [], "V": []}
 
@@ -276,4 +282,3 @@ class TandemAoISimulatorV3:
         if validate:
             self.assert_state_invariants()
         return build_run_results(self, K, warmup)
-

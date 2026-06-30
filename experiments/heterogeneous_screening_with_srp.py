@@ -45,6 +45,7 @@ POLICY_ORDER_WITH_SRP = (
     "iso1 + iso2-lambda",
     "SRP-iso",
     "SRP-tandem-LB",
+    "Downstream-Aware MW",
     "Greedy",
     "Uniform",
 )
@@ -318,7 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"rows={len(df)}")
     print(f"wrote={args.output}")
     summary = (
-        df[df["policy"].isin(["Joint FGMW", "SRP-iso", "SRP-tandem-LB", "Greedy"])]
+        df[df["policy"].isin(["Joint FGMW", "SRP-iso", "SRP-tandem-LB", "Downstream-Aware MW", "Greedy"])]
         .groupby(["policy", "alignment"])["gap_vs_iso_lambda_pct"]
         .mean()
         .round(3)

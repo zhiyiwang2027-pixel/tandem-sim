@@ -281,7 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"rows={len(df)}")
     print(f"wrote={args.output}")
     summary = (
-        df[df["policy"].isin(["Joint FGMW", "Greedy"])]
+        df[df["policy"].isin(["Joint FGMW", "iso1 + iso2-lambda", "Downstream-Aware MW", "Greedy"])]
         .groupby(["policy", "alignment"])["gap_vs_iso_lambda_pct"]
         .mean()
         .round(3)

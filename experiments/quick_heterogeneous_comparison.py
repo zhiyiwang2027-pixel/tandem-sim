@@ -17,7 +17,14 @@ from tandem.rate_optimizer import iso2_lambda_params_v3
 from tandem.simulator import TandemAoISimulatorV3
 
 
-POLICY_ORDER = ("Joint FGMW", "iso1 + iso2", "iso1 + iso2-lambda", "Greedy", "Uniform")
+POLICY_ORDER = (
+    "Joint FGMW",
+    "iso1 + iso2",
+    "iso1 + iso2-lambda",
+    "Downstream-Aware MW",
+    "Greedy",
+    "Uniform",
+)
 CONFIG_ORDER = ("aligned", "neutral", "conflict")
 DEFAULT_OUTPUT_CSV = Path("results/quick_heterogeneous_comparison.csv")
 
