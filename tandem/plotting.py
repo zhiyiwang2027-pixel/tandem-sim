@@ -11,15 +11,24 @@ SWEEP_STYLE = {
     "iso1 + iso2-lambda": ("D--", "#6f4dbf"),
     "iso1 + theorem-SRP2": ("x--", "#c64bd1"),
     "SRP1 + iso2": ("s--", "#0f9b9b"),
+    "Downstream-Aware MW": ("P-", "#e07a1f"),
     "Greedy": (">--", "#3fa83f"),
     "Uniform": ("v--", "#888888"),
 }
 QUICK_CONFIG_ORDER = ["aligned", "neutral", "conflict"]
-QUICK_POLICY_ORDER = ["Joint FGMW", "iso1 + iso2", "iso1 + iso2-lambda", "Greedy", "Uniform"]
+QUICK_POLICY_ORDER = [
+    "Joint FGMW",
+    "iso1 + iso2",
+    "iso1 + iso2-lambda",
+    "Downstream-Aware MW",
+    "Greedy",
+    "Uniform",
+]
 QUICK_POLICY_COLORS = {
     "Joint FGMW": "#d6231f",
     "iso1 + iso2": "#1f4eb4",
     "iso1 + iso2-lambda": "#6f4dbf",
+    "Downstream-Aware MW": "#e07a1f",
     "SRP-iso": "#0f9b9b",
     "SRP-tandem-LB": "#c64bd1",
     "Greedy": "#3fa83f",

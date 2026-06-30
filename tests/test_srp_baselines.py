@@ -106,13 +106,14 @@ def test_srp_quick_function_smoke_run(tmp_path):
     )
 
     assert output.exists()
-    assert len(df) == 28
+    assert len(df) == 32
     assert set(df["policy"]) == {
         "Joint FGMW",
         "iso1 + iso2",
         "iso1 + iso2-lambda",
         "SRP-iso",
         "SRP-tandem-LB",
+        "Downstream-Aware MW",
         "Greedy",
         "Uniform",
     }
@@ -143,4 +144,4 @@ def test_srp_quick_cli_does_not_modify_mw_only_screening_csv(tmp_path):
     assert "mode=quick" in completed.stdout
     assert output.exists()
     df = pd.read_csv(output)
-    assert len(df) == 28
+    assert len(df) == 32
