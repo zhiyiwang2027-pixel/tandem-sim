@@ -15,7 +15,7 @@ SWEEP_STYLE = {
     "Greedy": (">--", "#3fa83f"),
     "Uniform": ("v--", "#888888"),
 }
-QUICK_CONFIG_ORDER = ["aligned", "neutral", "conflict"]
+QUICK_CONFIG_ORDER = ["det_aligned", "det_conflict", "aligned", "neutral", "conflict"]
 QUICK_POLICY_ORDER = [
     "Joint FGMW",
     "iso1 + iso2",
@@ -92,7 +92,7 @@ def plot_sweep_grid(sweep_v3, style=None):
     titles = {
         "p": "channel reliability p",
         "L": "link length L",
-        "w": "high-class weight",
+        "w": "raw weight spread",
         "mu": "edge rate mu",
         "N": "number of sources N",
     }
@@ -197,7 +197,7 @@ def plot_quick_heterogeneous_aoi(df):
     ax.set_xticks(x)
     ax.set_xticklabels(configs)
     ax.set_ylabel("mean weighted destination AoI")
-    ax.set_title("Quick random heterogeneous comparison")
+    ax.set_title("Quick deterministic raw-weight heterogeneous comparison")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(fontsize=8)
     plt.tight_layout()
@@ -235,7 +235,7 @@ def plot_quick_heterogeneous_gap_vs_iso(df):
         df,
         "gap_vs_iso_pct",
         "gap vs iso1+iso2 (%)",
-        "Policy gap relative to relaxed isolated MW",
+        "Deterministic raw-weight gap relative to relaxed isolated MW",
     )
 
 
@@ -244,7 +244,7 @@ def plot_quick_heterogeneous_gap_vs_iso_lambda(df):
         df,
         "gap_vs_iso_lambda_pct",
         "gap vs iso1+iso2-lambda (%)",
-        "Policy gap relative to lambda-aware isolated MW",
+        "Deterministic raw-weight gap relative to lambda-aware isolated MW",
     )
 
 
@@ -273,7 +273,8 @@ def plot_quick_heterogeneous_pipeline(df):
         ax.set_ylabel("post-warmup rate/fraction")
         ax.grid(axis="y", alpha=0.3)
         ax.legend(fontsize=7)
-    plt.tight_layout()
+    fig.suptitle("Deterministic raw-weight pipeline diagnostics", y=0.99)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     return fig, axes
 
 
@@ -535,3 +536,58 @@ def plot_screening_greedy_heatmap(df):
         "Greedy",
         "Greedy gap by alignment and edge rate",
     )
+
+
+def plot_deterministic_heterogeneous_gap(df):
+    networks = [name for name in ["det_aligned", "det_conflict"] if name in set(df["network"])]
+    L_values = sorted(df["L"].unique())
+    policy_order = [
+        "Joint FGMW",
+        "iso1 + iso2",
+        "iso1 + iso2-lambda",
+        "Downstream-Aware MW",
+        "Greedy",
+        "Uniform",
+    ]
+    policies = [policy for policy in policy_order if policy in set(df["policy"])]
+    fig, axes = plt.subplots(
+        len(networks),
+        len(L_values),
+        figsize=(5.2 * max(1, len(L_values)), 3.8 * max(1, len(networks))),
+        squeeze=False,
+        sharex=True,
+    )
+    for r, network in enumerate(networks):
+        for c, L in enumerate(L_values):
+            ax = axes[r, c]
+            data = df[(df["network"] == network) & (df["L"] == L)]
+            for policy in policies:
+                pdata = data[data["policy"] == policy].sort_values("mu")
+                if pdata.empty:
+                    continue
+                style, color = SWEEP_STYLE.get(policy, ("o-", None))
+                ax.plot(
+                    pdata["mu"],
+                    pdata["gap_vs_iso_lambda_pct"],
+                    style,
+                    color=color,
+                    lw=1.8,
+                    ms=6,
+                    label=policy,
+                    mfc=("none" if "--" in style else color),
+                )
+            ax.axhline(0.0, color="k", lw=1.0)
+            ax.set_title(f"{network}, L={L}")
+            ax.set_xlabel("mu")
+            ax.set_ylabel("gap vs iso1+iso2-lambda (%)")
+            ax.grid(alpha=0.3)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.suptitle(
+        "Aggressive deterministic raw-weight heterogeneous comparison",
+        y=0.995,
+    )
+    if handles:
+        fig.legend(handles, labels, loc="upper center", ncol=min(3, len(labels)), fontsize=8)
+        fig.subplots_adjust(top=0.82)
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    return fig, axes

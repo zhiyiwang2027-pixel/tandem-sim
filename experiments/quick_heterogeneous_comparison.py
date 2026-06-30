@@ -15,6 +15,12 @@ from tandem.diagnostics import estimate_iso1_voq_arrival_rates
 from tandem.policies import build_experiment_v3, build_iso1_iso2_lambda_policy_v3
 from tandem.rate_optimizer import iso2_lambda_params_v3
 from tandem.simulator import TandemAoISimulatorV3
+from experiments.deterministic_heterogeneous_comparison import (
+    NETWORK_ORDER as DETERMINISTIC_NETWORK_ORDER,
+    RAW_WEIGHTS,
+    P_GOOD_TO_BAD,
+    deterministic_networks,
+)
 
 
 POLICY_ORDER = (
@@ -141,6 +147,19 @@ def _profile_dataframe(w: np.ndarray, channel_configs: Mapping[str, np.ndarray],
     return pd.DataFrame(rows)
 
 
+def _deterministic_profile_dataframe(networks: Mapping[str, Mapping[str, np.ndarray]], L: int) -> pd.DataFrame:
+    w = RAW_WEIGHTS
+    rows = []
+    for i, weight in enumerate(w):
+        row = {"source": i, "w": float(weight)}
+        for name in DETERMINISTIC_NETWORK_ORDER:
+            p_i = float(networks[name]["p"][i])
+            row[f"p_{name}"] = p_i
+            row[f"c_{name}"] = float((L - 1.0) + 1.0 / p_i)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def quick_random_heterogeneous_comparison(
     *,
     N: int = 8,
@@ -158,15 +177,23 @@ def quick_random_heterogeneous_comparison(
     p_levels: Sequence[float] = (0.95, 0.85, 0.70, 0.55, 0.40, 0.28, 0.18, 0.10),
     output_csv: str | Path = DEFAULT_OUTPUT_CSV,
 ) -> Dict[str, object]:
-    """Run the short heterogeneous comparison and save a CSV result table."""
+    """Run the deterministic aggressive raw-weight heterogeneous quick comparison.
+
+    The function name is retained for notebook/backward compatibility, but the
+    default quick demo no longer samples random log-uniform normalized weights.
+    It uses the canonical deterministic raw weights and the det_aligned /
+    det_conflict channel pairings.
+    """
     seeds = tuple(seeds)
     pilot_seeds = tuple(pilot_seeds)
-    w = random_weight_profile(N, seed=weight_seed, ratio=ratio)
-    channel_configs = make_channel_configs_from_weights(w, p_levels, seed=channel_seed)
+    if int(N) != RAW_WEIGHTS.size:
+        raise ValueError("The deterministic quick comparison uses N=8.")
+    w = RAW_WEIGHTS.copy()
+    networks = deterministic_networks()
 
     rows = []
-    for config_name in CONFIG_ORDER:
-        p = channel_configs[config_name]
+    for config_name in DETERMINISTIC_NETWORK_ORDER:
+        p = networks[config_name]["p"]
         c = (L - 1.0) + 1.0 / p
         corr_wc = float(np.corrcoef(w, c)[0, 1])
         policies, params = build_experiment_v3(N, L, p, mu, w)
@@ -205,18 +232,21 @@ def quick_random_heterogeneous_comparison(
             )
             row = {
                 "config": config_name,
+                "network": config_name,
                 "policy": policy_name,
                 "N": int(N),
                 "L": int(L),
                 "mu": float(mu),
-                "weight_seed": int(weight_seed),
-                "channel_seed": int(channel_seed),
+                "weight_seed": np.nan,
+                "channel_seed": np.nan,
                 "K": int(K),
                 "warmup": int(warmup),
                 "num_seeds": int(len(seeds)),
                 "pilot_K": int(K_pilot),
                 "pilot_warmup": int(warmup_pilot),
                 "num_pilot_seeds": int(len(pilot_seeds)),
+                "w": list(map(float, w)),
+                "p": list(map(float, p)),
                 "corr_w_c": corr_wc,
                 "lambda_link": float(joint_dual["lambda_link"]),
                 "nu_edge": float(joint_dual["nu_edge"]),
@@ -257,9 +287,9 @@ def quick_random_heterogeneous_comparison(
 
     return {
         "results": results,
-        "profiles": _profile_dataframe(w, channel_configs, L),
+        "profiles": _deterministic_profile_dataframe(networks, L),
         "weights": w,
-        "channels": channel_configs,
+        "channels": {name: networks[name]["p"].copy() for name in DETERMINISTIC_NETWORK_ORDER},
         "pilot_seeds": pilot_seeds,
         "csv_path": output_path,
     }
