@@ -125,6 +125,11 @@ def test_section8_embedded_sweep_uses_aggressive_raw_deterministic_metadata():
         for cell in nb["cells"][section8_idx + 1 :]
         if "SWEEP_V3_JSON" in "".join(cell.get("source", []))
     )
+    render_cell = next(
+        "".join(cell.get("source", []))
+        for cell in nb["cells"][section8_idx + 1 :]
+        if "plot_sweep_" in "".join(cell.get("source", []))
+    )
     namespace = {}
     exec(sweep_cell, namespace)
     sweep = json.loads(namespace["SWEEP_V3_JSON"])
@@ -141,8 +146,11 @@ def test_section8_embedded_sweep_uses_aggressive_raw_deterministic_metadata():
     assert "SRP-tandem-LB" in metadata["policies"]
     assert "Downstream-Aware MW" in metadata["policies"]
     np.testing.assert_array_equal(np.asarray(metadata["raw_weights_base"], float), EXPECTED_WEIGHTS)
+    assert "plot_sweep_gap_grid" in render_cell
+    assert "plot_sweep_grid(SWEEP_V3)" not in render_cell
 
     all_text = section8.lower()
+    assert "uniform" not in all_text
     assert "log-uniform" not in all_text
     assert "normalized" not in all_text.replace("unnormalized", "")
     assert "weight_ratio=10" not in all_text
