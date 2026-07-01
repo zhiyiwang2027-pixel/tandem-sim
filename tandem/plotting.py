@@ -119,6 +119,38 @@ def plot_sweep_grid(sweep_v3, style=None):
     return fig, axes
 
 
+def plot_sweep_gap_grid(sweep_v3, reference_policy="iso1 + iso2-lambda", style=None):
+    style = SWEEP_STYLE if style is None else style
+    titles = {
+        "p": "channel reliability p",
+        "L": "link length L",
+        "w": "raw weight spread",
+        "mu": "edge rate mu",
+        "N": "number of sources N",
+    }
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    axf = axes.ravel()
+    for ax, nm in zip(axf, ["p", "L", "w", "mu", "N"]):
+        s = sweep_v3[nm]
+        x = s["x"]
+        ref = np.asarray(s["policies"][reference_policy], float)
+        for k, (st, cl) in style.items():
+            if k not in s["policies"]:
+                continue
+            y = 100.0 * (np.asarray(s["policies"][k], float) / ref - 1.0)
+            ax.plot(x, y, st, color=cl, lw=1.8, ms=8, label=k, mfc=("none" if "--" in st else cl))
+        ax.axhline(0.0, color="k", lw=1.2)
+        ax.set_xlabel(s["xlabel"])
+        ax.set_ylabel(f"gap vs {reference_policy} (%)")
+        ax.set_title("vs " + titles[nm])
+        ax.grid(alpha=.3)
+    axf[5].axis("off")
+    h_, l_ = axf[0].get_legend_handles_labels()
+    axf[5].legend(h_, l_, loc="center", fontsize=12, title="policy")
+    plt.tight_layout()
+    return fig, axes
+
+
 def plot_heterogeneous_binding_regimes(HV, ci_fun):
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
     for row, key in enumerate(["A", "B"]):
