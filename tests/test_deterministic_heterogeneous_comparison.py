@@ -19,6 +19,14 @@ from experiments.deterministic_heterogeneous_comparison import (
 
 
 EXPECTED_WEIGHTS = np.array([8.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625])
+EXPECTED_MAIN_POLICIES = {
+    "Joint FGMW",
+    "iso1 + iso2-lambda",
+    "Downstream-Aware MW",
+    "Greedy",
+    "SRP-iso",
+    "SRP-tandem-LB",
+}
 
 
 def _sha256(path: Path) -> str:
@@ -53,6 +61,9 @@ def test_deterministic_quick_experiment_runs_without_duplicate_rows(tmp_path):
     assert not df.duplicated(["network", "L", "mu", "policy"]).any()
     assert set(df["network"]) == set(NETWORK_ORDER)
     assert set(df["policy"]) == set(POLICY_ORDER)
+    assert set(df["policy"]) == EXPECTED_MAIN_POLICIES
+    assert "Uniform" not in set(df["policy"])
+    assert "iso1 + iso2" not in set(df["policy"])
     assert np.all(np.isfinite(df["weighted_dest_aoi"]))
     assert np.all(np.isfinite(df["gap_vs_iso_lambda_pct"]))
 
@@ -77,6 +88,8 @@ def test_quick_heterogeneous_uses_deterministic_raw_networks_without_duplicate_r
     assert not df.duplicated(["network", "L", "mu", "policy"]).any()
     assert set(df["network"]) == set(NETWORK_ORDER)
     assert set(df["policy"]) == set(POLICY_ORDER)
+    assert set(df["policy"]) == EXPECTED_MAIN_POLICIES
+    assert "Uniform" not in set(df["policy"])
     for value in df["w"]:
         np.testing.assert_array_equal(np.asarray(value, float), EXPECTED_WEIGHTS)
     assert np.isnan(df["weight_seed"]).all()
@@ -101,9 +114,19 @@ def test_deterministic_quick_does_not_modify_full_cached_csvs(tmp_path):
 
 def test_section8_embedded_sweep_uses_aggressive_raw_deterministic_metadata():
     nb = json.loads(NOTEBOOK.read_text())
-    section8 = "".join(nb["cells"][21].get("source", []))
+    section8_idx = next(
+        i
+        for i, cell in enumerate(nb["cells"])
+        if "## 8. Aggressive deterministic heterogeneous sweeps" in "".join(cell.get("source", []))
+    )
+    section8 = "".join(nb["cells"][section8_idx].get("source", []))
+    sweep_cell = next(
+        "".join(cell.get("source", []))
+        for cell in nb["cells"][section8_idx + 1 :]
+        if "SWEEP_V3_JSON" in "".join(cell.get("source", []))
+    )
     namespace = {}
-    exec("".join(nb["cells"][22].get("source", [])), namespace)
+    exec(sweep_cell, namespace)
     sweep = json.loads(namespace["SWEEP_V3_JSON"])
     metadata = sweep["metadata"]
 
@@ -112,9 +135,27 @@ def test_section8_embedded_sweep_uses_aggressive_raw_deterministic_metadata():
     assert metadata["network"] == "det_conflict"
     assert metadata["weights_normalized"] is False
     assert metadata["random_sampling"] is False
+    assert set(metadata["policies"]) == EXPECTED_MAIN_POLICIES
+    assert "Uniform" not in metadata["policies"]
+    assert "SRP-iso" in metadata["policies"]
+    assert "SRP-tandem-LB" in metadata["policies"]
+    assert "Downstream-Aware MW" in metadata["policies"]
     np.testing.assert_array_equal(np.asarray(metadata["raw_weights_base"], float), EXPECTED_WEIGHTS)
 
     all_text = section8.lower()
     assert "log-uniform" not in all_text
     assert "normalized" not in all_text.replace("unnormalized", "")
     assert "weight_ratio=10" not in all_text
+
+
+def test_notebook_no_longer_presents_anchor_configuration_as_main_section():
+    nb = json.loads(NOTEBOOK.read_text())
+    headings = [
+        "".join(cell.get("source", [])).strip().splitlines()[0]
+        for cell in nb["cells"]
+        if cell.get("cell_type") == "markdown"
+        and "".join(cell.get("source", [])).lstrip().startswith("#")
+    ]
+    assert "## 5. Anchor configuration" not in headings
+    assert not any("Anchor Configuration" in heading for heading in headings)
+    assert "## Appendix B. Minimal regression sanity checks" in headings

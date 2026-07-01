@@ -14,7 +14,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tandem.diagnostics import estimate_iso1_voq_arrival_rates
-from tandem.policies import build_experiment_v3, build_iso1_iso2_lambda_policy_v3
+from tandem.policies import (
+    build_experiment_v3,
+    build_iso1_iso2_lambda_policy_v3,
+    build_srp_iso_policy_v3,
+    build_srp_tandem_lb_policy_v3,
+)
 from tandem.rate_optimizer import iso2_lambda_params_v3
 from tandem.simulator import TandemAoISimulatorV3
 
@@ -27,11 +32,11 @@ L_VALUES = (3, 5)
 MU_VALUES = (0.12, 0.25, 0.40)
 POLICY_ORDER = (
     "Joint FGMW",
-    "iso1 + iso2",
     "iso1 + iso2-lambda",
     "Downstream-Aware MW",
     "Greedy",
-    "Uniform",
+    "SRP-iso",
+    "SRP-tandem-LB",
 )
 
 
@@ -131,6 +136,12 @@ def _build_policies_with_lambda(N, L, p, mu, w, *, pilot_seeds, K_pilot, warmup_
     policies = dict(policies)
     policies["iso1 + iso2-lambda"] = build_iso1_iso2_lambda_policy_v3(
         N, L, p, mu, w, lambda_est["lambda_hat"]
+    )
+    policies["SRP-iso"] = build_srp_iso_policy_v3(
+        N, L, p, mu, w, lambda_est["lambda_hat"]
+    )
+    policies["SRP-tandem-LB"] = build_srp_tandem_lb_policy_v3(
+        N, L, p, mu, w, joint_params=params["joint"]
     )
     return policies, params, lambda_est
 

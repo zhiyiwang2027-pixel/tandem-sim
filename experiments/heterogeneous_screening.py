@@ -14,7 +14,6 @@ if str(ROOT) not in sys.path:
 
 from experiments.quick_heterogeneous_comparison import (
     CONFIG_ORDER,
-    POLICY_ORDER,
     make_channel_configs_from_weights,
     random_weight_profile,
     run_policy_mean,
@@ -25,6 +24,14 @@ from tandem.rate_optimizer import iso2_lambda_params_v3
 
 
 DEFAULT_OUTPUT_CSV = Path("results/heterogeneous_screening.csv")
+POLICY_ORDER = (
+    "Joint FGMW",
+    "iso1 + iso2",
+    "iso1 + iso2-lambda",
+    "Downstream-Aware MW",
+    "Greedy",
+    "Uniform",
+)
 P_LEVELS = (0.95, 0.85, 0.70, 0.55, 0.40, 0.28, 0.18, 0.10)
 WEIGHT_RATIOS = (10.0, 50.0, 200.0)
 L_VALUES = (3, 5)

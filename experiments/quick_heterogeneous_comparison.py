@@ -12,7 +12,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tandem.diagnostics import estimate_iso1_voq_arrival_rates
-from tandem.policies import build_experiment_v3, build_iso1_iso2_lambda_policy_v3
+from tandem.policies import (
+    build_experiment_v3,
+    build_iso1_iso2_lambda_policy_v3,
+    build_srp_iso_policy_v3,
+    build_srp_tandem_lb_policy_v3,
+)
 from tandem.rate_optimizer import iso2_lambda_params_v3
 from tandem.simulator import TandemAoISimulatorV3
 from experiments.deterministic_heterogeneous_comparison import (
@@ -25,11 +30,11 @@ from experiments.deterministic_heterogeneous_comparison import (
 
 POLICY_ORDER = (
     "Joint FGMW",
-    "iso1 + iso2",
     "iso1 + iso2-lambda",
     "Downstream-Aware MW",
     "Greedy",
-    "Uniform",
+    "SRP-iso",
+    "SRP-tandem-LB",
 )
 CONFIG_ORDER = ("aligned", "neutral", "conflict")
 DEFAULT_OUTPUT_CSV = Path("results/quick_heterogeneous_comparison.csv")
@@ -212,6 +217,10 @@ def quick_random_heterogeneous_comparison(
         policies["iso1 + iso2-lambda"] = build_iso1_iso2_lambda_policy_v3(
             N, L, p, mu, w, lambda_hat
         )
+        policies["SRP-iso"] = build_srp_iso_policy_v3(N, L, p, mu, w, lambda_hat)
+        policies["SRP-tandem-LB"] = build_srp_tandem_lb_policy_v3(
+            N, L, p, mu, w, joint_params=params["joint"]
+        )
         iso2_lambda = iso2_lambda_params_v3(N, L, p, mu, w, lambda_hat)
         joint_dual = params["joint"]["dual"]
         qd_relaxed = params["iso2"]["qd"]
@@ -263,18 +272,13 @@ def quick_random_heterogeneous_comparison(
             }
             config_rows.append(row)
 
-        iso_mean = next(
-            row["weighted_dest_aoi"]
-            for row in config_rows
-            if row["policy"] == "iso1 + iso2"
-        )
         iso_lambda_mean = next(
             row["weighted_dest_aoi"]
             for row in config_rows
             if row["policy"] == "iso1 + iso2-lambda"
         )
         for row in config_rows:
-            row["gap_vs_iso_pct"] = 100.0 * (row["weighted_dest_aoi"] / iso_mean - 1.0)
+            row["gap_vs_iso_pct"] = np.nan
             row["gap_vs_iso_lambda_pct"] = 100.0 * (
                 row["weighted_dest_aoi"] / iso_lambda_mean - 1.0
             )
