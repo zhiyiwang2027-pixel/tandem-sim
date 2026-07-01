@@ -9,9 +9,13 @@ from tests.notebook_test_utils import NOTEBOOK
 def _cached_json_objects():
     namespace = {}
     nb = json.loads(NOTEBOOK.read_text())
-    for cell_no in (23, 26):
-        source = "".join(nb["cells"][cell_no - 1].get("source", []))
-        exec(compile(source, f"{NOTEBOOK.name}:cell-{cell_no}", "exec"), namespace)
+    for variable in ("SWEEP_V3_JSON", "HETERO_V3_JSON"):
+        source = next(
+            "".join(cell.get("source", []))
+            for cell in nb["cells"]
+            if variable in "".join(cell.get("source", []))
+        )
+        exec(compile(source, f"{NOTEBOOK.name}:{variable}", "exec"), namespace)
     return {
         "SWEEP_V3_JSON": json.loads(namespace["SWEEP_V3_JSON"]),
         "HETERO_V3_JSON": json.loads(namespace["HETERO_V3_JSON"]),

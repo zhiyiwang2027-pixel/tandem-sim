@@ -11,6 +11,8 @@ SWEEP_STYLE = {
     "iso1 + iso2-lambda": ("D--", "#6f4dbf"),
     "iso1 + theorem-SRP2": ("x--", "#c64bd1"),
     "SRP1 + iso2": ("s--", "#0f9b9b"),
+    "SRP-iso": ("s--", "#0f9b9b"),
+    "SRP-tandem-LB": ("x--", "#c64bd1"),
     "Downstream-Aware MW": ("P-", "#e07a1f"),
     "Greedy": (">--", "#3fa83f"),
     "Uniform": ("v--", "#888888"),
@@ -18,11 +20,11 @@ SWEEP_STYLE = {
 QUICK_CONFIG_ORDER = ["det_aligned", "det_conflict", "aligned", "neutral", "conflict"]
 QUICK_POLICY_ORDER = [
     "Joint FGMW",
-    "iso1 + iso2",
     "iso1 + iso2-lambda",
     "Downstream-Aware MW",
     "Greedy",
-    "Uniform",
+    "SRP-iso",
+    "SRP-tandem-LB",
 ]
 QUICK_POLICY_COLORS = {
     "Joint FGMW": "#d6231f",
@@ -543,11 +545,11 @@ def plot_deterministic_heterogeneous_gap(df):
     L_values = sorted(df["L"].unique())
     policy_order = [
         "Joint FGMW",
-        "iso1 + iso2",
         "iso1 + iso2-lambda",
         "Downstream-Aware MW",
         "Greedy",
-        "Uniform",
+        "SRP-iso",
+        "SRP-tandem-LB",
     ]
     policies = [policy for policy in policy_order if policy in set(df["policy"])]
     fig, axes = plt.subplots(
